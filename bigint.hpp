@@ -61,7 +61,11 @@ class BigInt {
   
   public:
   typedef uint64_t internal_type;
-  const uint8_t internal_type_bitlen = sizeof(internal_type)*8;
+  const uint8_t internal_bitlen = sizeof(internal_type)*8;
+  // no bits set
+  static const internal_type internal_0 = (internal_type)0;
+  // all bits set
+  static const internal_type internal_max = ~((internal_type)0);
   
   private:
   /**
@@ -149,7 +153,7 @@ class BigInt {
     
     uint64_t pos = m_data.size()-1;
     internal_type highest = m_data[pos]; 
-    pos = pos * internal_type_bitlen + 1;
+    pos = pos * internal_bitlen + 1;
 
     // there is a nice way of doing binary search here:
     // if (highest & 0xffff0000) pos += 32;
@@ -178,7 +182,7 @@ class BigInt {
 
     // m_data now has at least one element and s is <= 64
     size_t i = 0;
-    size_t mask = ~0ULL; // for s == 64, we'll copy all.
+    internal_type mask = internal_max; // for s == 64, we'll copy all.
     if (s < sizeof(internal_type)*8) {
       mask = (1ULL << s) - 1; // create bitfield with s times 1 at the end.
     }
@@ -213,23 +217,24 @@ class BigInt {
       return;
 
     // add empty elements to the front of the vector if s is larger than the internal bitlength
-    if (s >= internal_type_bitlen) {
-      m_data.insert(m_data.begin(), s/internal_type_bitlen, 0ULL);
-      s %= internal_type_bitlen;
+    if (s >= internal_bitlen) {
+      // instantiate a new internal_type(internal_0) because insert wants a const reference
+      m_data.insert(m_data.begin(), s/internal_bitlen, internal_type(internal_0));
+      s %= internal_bitlen;
       if (s == 0)
         return;
     }
 
     // if the highest set bit plus the shift points to the next element, we need an
     // extra element at the end:
-    if (get_highest_set_bit_position() + s > internal_type_bitlen) {
-      m_data.push_back(0ULL);
+    if (get_highest_set_bit_position() + s > internal_bitlen) {
+      m_data.push_back(internal_type(internal_0));
     }
 
 
     for (int64_t i = m_data.size()-1; i > 0; --i) {
       m_data[i] <<= s;
-      m_data[i] |= (m_data[i-1] >> (internal_type_bitlen - s));
+      m_data[i] |= (m_data[i-1] >> (internal_bitlen - s));
     }
     m_data[0] <<= s;
 
@@ -325,12 +330,12 @@ class BigInt {
     uint64_t idx = 0;
     for (; idx < other.m_data.size() || idx < m_data.size() || carry_out; ++idx) {
       carry_in = carry_out;
-      internal_type other_data = 0ULL;
+      internal_type other_data = internal_0;
       if (idx < other.m_data.size()) {
         other_data = other.m_data[idx];
       }
 
-      uint64_t local_data = 0ULL;
+      uint64_t local_data = internal_0;
       if (m_data.size() <= idx) {
         m_data.resize(m_data.size()+1);
       } else {
@@ -338,12 +343,12 @@ class BigInt {
       }
 
       // set carry out if addition of both values will cause overflow (1.)
-      carry_out = (other_data > (~0ULL - local_data));
+      carry_out = (other_data > (internal_max - local_data));
 
       local_data += other_data;
       
       // also, set carry if the carry in causes overflow (2.; both cases cannot occur at the same time.)
-      if (local_data == ~0ULL && carry_in) {
+      if (local_data == internal_max && carry_in) {
         carry_out = 1;
       }
       m_data[idx] = carry_in + local_data;
@@ -351,7 +356,7 @@ class BigInt {
   }
 
   void remove_empty_registers() {
-    uint64_t i = m_data.size()-1;
+    int64_t i = m_data.size()-1;
     for (; i >= 0; --i) {
       if (m_data[i])
         break;
@@ -427,19 +432,19 @@ class BigInt {
    * return n bits starting from the given position (0-based from LSB).
    * all bits higher than MSB will be zero.
    *
-   * n must neither be 0 nor larger than internal_type_bitlen.
+   * n must neither be 0 nor larger than internal_bitlen.
    */
   internal_type get_bits_at_pos(uint64_t position, uint8_t n) const {
-    uint64_t start_field_idx = position / internal_type_bitlen;
+    uint64_t start_field_idx = position / internal_bitlen;
     if (start_field_idx >= m_data.size())
       return 0;
 
     // how far is the source mask shifted to the left?
-    uint64_t start_field_shift = position % internal_type_bitlen;
-    uint64_t end_field_idx = (position+n-1) / internal_type_bitlen;
+    uint64_t start_field_shift = position % internal_bitlen;
+    uint64_t end_field_idx = (position+n-1) / internal_bitlen;
 
     // calculate data from the first block, create a mask of n bits and shift it to the correct position.
-    internal_type mask = ~0ULL;
+    internal_type mask = internal_max;
     if (n % 64) {
       mask = ((1ULL << n)-1) << start_field_shift;
     } 
@@ -451,10 +456,10 @@ class BigInt {
     }
 
     // for the remaining bits, we need to know how large the overflow was, and extract those bytes.
-    uint64_t remaining_bits = (start_field_shift + n) % internal_type_bitlen;
+    uint64_t remaining_bits = (start_field_shift + n) % internal_bitlen;
     mask = ((1ULL << remaining_bits)-1);
     // shift the resulting block to the MSB area (TODO we don't even need to mask, right?):
-    internal_type total = (m_data[end_field_idx] & mask) << (internal_type_bitlen - remaining_bits);
+    internal_type total = (m_data[end_field_idx] & mask) << (internal_bitlen - remaining_bits);
     total |= start_data;
     return total;
   }
@@ -467,15 +472,15 @@ class BigInt {
       return;
     internal_type carry = 0;
 
-    // if value is not a multiple of the internal_type_bitlen, split the
+    // if value is not a multiple of the internal_bitlen, split the
     // value into two words aligned to the bitlen, add the remaining bits (max: bitlen-1)
     // to the carry.
     
-    uint64_t start_shift = position % internal_type_bitlen; 
-    uint64_t data_idx = position / internal_type_bitlen;
+    uint64_t start_shift = position % internal_bitlen; 
+    uint64_t data_idx = position / internal_bitlen;
 
     if (start_shift) {
-      carry = (value >> (internal_type_bitlen - start_shift));
+      carry = (value >> (internal_bitlen - start_shift));
       value <<= start_shift;  
     }
 
@@ -488,7 +493,7 @@ class BigInt {
 
       // first iteration only:
       if (value) {
-        if (m_data[data_idx] > (~0ULL-value)) {
+        if (m_data[data_idx] > (internal_max-value)) {
           // we can safely add 1 to carry here, since the maximum value of
           // carry (through the alignment-shift) is 0x7f... (MSB is definitely 0)
           carry += 1;
@@ -497,7 +502,7 @@ class BigInt {
         value = 0;
       } else {
         // following iterations, value is zero and carry is something up to 0x80
-        if (m_data[data_idx] > (~0ULL-carry)) { 
+        if (m_data[data_idx] > (internal_max-carry)) { 
           carry_out = 1;
         } else {
           carry_out = 0;
@@ -518,7 +523,7 @@ class BigInt {
     
     BigInt target(0);
     // this code should even support 7-bit architectures ;)
-    const uint8_t blocksz = internal_type_bitlen/2;
+    const uint8_t blocksz = internal_bitlen/2;
 
     // iterate over all blocks of blocksz in other
     const uint64_t other_msb = other.get_highest_set_bit_position();

@@ -1,6 +1,5 @@
 #include "bigint.hpp"
 #include <iostream>
-#include <boost/lexical_cast.hpp>
 #include <climits>
 using namespace std;
 
@@ -233,7 +232,6 @@ void test_add_bits_at_pos() {
         goodcount++;
       }
     }
-    //bi.dump_registers(boost::lexical_cast<string>(i % 130));
   }
   cout << "add/get bit tests: " << (goodcount + badcount) << " total, " << badcount << " failed." << endl;
 }
