@@ -3,82 +3,57 @@
 #include <climits>
 using namespace std;
 
-std::vector<std::pair<const char*, std::vector<uint64_t>>> dec_test = {
-  {"18", {18}},
-  {"19", {19}},
-  {"10", {10}},
-  {"11", {11}},
-  {"20", {20}},
-  {"220", {220}},
-  {"1220", {1220}},
-  {"4220", {4220}},
-  {"9220", {9220}},
-  {"2939220", {2939220}},
-  {"7779220", {7779220}},
-  {"7659220", {7659220}},
-  {"9999999", {9999999}},
-  {"19999999", {19999999}},
-  {"119999999", {119999999}},
-  {"1119999999", {1119999999}},
-  {"11119999999", {11119999999}},
-  {"111119999999", {111119999999}},
-  {"9111119999999", {9111119999999}},
-  {"99111119999999", {99111119999999}},
-  {"999111119999999", {999111119999999}},
-  {"9999111119999999", {9999111119999999}},
-  {"18446744073709551615", {18446744073709551615ULL}}, // 2^64-1
-  {"18446744073709551616", {0ULL, 1ULL}}, // 2^64 -- this should leave the lowest data element completely zero.
-  {"18446744073709551617", {1ULL, 1ULL}}, // 2^64+1
-};
-std::vector<std::pair<const char*, std::vector<uint64_t>>> oct_test = {
-  {"10", {8}},
-  {"100", {64}},
+std::vector<std::pair<uint8_t, std::pair<const char*, std::vector<uint64_t>>>> uint64_repr_test = {
+  {10, {"18", {18}}},
+  {10, {"19", {19}}},
+  {10, {"10", {10}}},
+  {10, {"11", {11}}},
+  {10, {"20", {20}}},
+  {10, {"220", {220}}},
+  {10, {"1220", {1220}}},
+  {10, {"4220", {4220}}},
+  {10, {"9220", {9220}}},
+  {10, {"2939220", {2939220}}},
+  {10, {"7779220", {7779220}}},
+  {10, {"7659220", {7659220}}},
+  {10, {"9999999", {9999999}}},
+  {10, {"19999999", {19999999}}},
+  {10, {"119999999", {119999999}}},
+  {10, {"1119999999", {1119999999}}},
+  {10, {"11119999999", {11119999999}}},
+  {10, {"111119999999", {111119999999}}},
+  {10, {"9111119999999", {9111119999999}}},
+  {10, {"99111119999999", {99111119999999}}},
+  {10, {"999111119999999", {999111119999999}}},
+  {10, {"9999111119999999", {9999111119999999}}},
+  {10, {"18446744073709551615", {18446744073709551615ULL}}}, // 2^64-1
+  {10, {"18446744073709551616", {0ULL, 1ULL}}}, // 2^64 -- this should leave the lowest data element completely zero.
+  {10, {"18446744073709551617", {1ULL, 1ULL}}}, // 2^64+1
+  // Octal tests
+  {8, {"10", {8}}},
+  {8, {"100", {64}}},
   // TODO more
-};
-std::vector<std::pair<const char*, std::vector<uint64_t>>> hex_test = {
-  {"ff", {0xff}},
-  {"FF", {0xff}},
-  {"fff1", {0xfff1}},
-  {"1fffffffffffffff", {0x1fffffffffffffffULL}},
-  {"ffffffffffffffff", {0xffffffffffffffffULL}},
-  {"1ffffffffffffffff", {0xffffffffffffffffULL, 0x1}},
-  {"10000000000000000", {0x0000000000000000ULL, 0x1}},
-
-  // TODO more
+  // hex tests
+  {16, {"ff", {0xff}}},
+  {16, {"FF", {0xff}}},
+  {16, {"fff1", {0xfff1}}},
+  {16, {"1fffffffffffffff", {0x1fffffffffffffffULL}}},
+  {16, {"ffffffffffffffff", {0xffffffffffffffffULL}}},
+  {16, {"1ffffffffffffffff", {0xffffffffffffffffULL, 0x1}}},
+  {16, {"10000000000000000", {0x0000000000000000ULL, 0x1}}},
 };
 
 void test_encoding() {
   uint64_t goodcount = 0;
   uint64_t badcount = 0;
-  for (auto it = dec_test.begin(); it != dec_test.end(); ++it) {
-    BigInt bi(it->first);
-    
-    if (bi.dump() != it->second) {
-      cerr << "!!FAIL(dec): " << it->first << endl;
-      badcount++;
-    } else {
-      goodcount++;
-    }
-  }
-
-  for (auto it = oct_test.begin(); it != oct_test.end(); ++it) {
-    BigInt bi(it->first, 8);
-
-    if (bi.dump() != it->second) {
-      cerr << "!!FAIL(oct): " << it->first << endl;
-      badcount++;
-    } else {
-      goodcount++;
-    }
-  }
-  for (auto it = hex_test.begin(); it != hex_test.end(); ++it) {
-    BigInt bi(it->first, 16);
+  for (auto it = uint64_repr_test.begin(); it != uint64_repr_test.end(); ++it) {
+    BigInt bi(it->second.first, it->first);
 
     vector<uint64_t> data = bi.dump();
-    if (data != it->second) {
-      cerr << "!!FAIL(hex): " << it->first << endl;
+    if (data != it->second.second) {
+      cout << "Fail encoding " << it->second.first << " (base " << (int)it->first << "):" << endl;
       for (auto i = data.begin(); i != data.end(); ++i) {
-        cerr << "  " << *i << endl;
+        cout << "  " << *i << endl;
       }
       badcount++;
     } else {
@@ -114,7 +89,7 @@ void test_shifts_inner(BigInt &bi, const int shift_width, uint64_t &goodcount, u
   bi >>= shift_width;
   auto data2 = bi.dump();
   // verify that for each block in the shifted block, the upper n bytes are equivalent to the lower n bytes in the next block in data1.
-  // exception is for shits that are multiples of 64: here we need to compare blocks directly, as we can't shl/shr on multiples of the bit size.
+  // exception is for shifts that are multiples of 64: here we need to compare blocks directly, as we can't shl/shr on multiples of the bit size.
   uint64_t block_jump = shift_width/64;
   if (shift_width % 64)
     block_jump++; 
@@ -127,16 +102,16 @@ void test_shifts_inner(BigInt &bi, const int shift_width, uint64_t &goodcount, u
       if (((data2[i] & (mask << block_shift)) >> block_shift) == (data1[i+block_jump] & mask)) {
         goodcount++;
       } else {
-        cerr << "FAIL: shifting @" << shift_width << ", block " << i << " to " << i + block_jump <<  endl;
-        cerr << hex << setw(16) << data2[i] << " <--> " << data1[i+block_jump] << dec << endl;
+        cout << "FAIL: shifting @" << shift_width << ", block " << i << " to " << i + block_jump <<  endl;
+        cout << hex << setw(16) << data2[i] << " <--> " << data1[i+block_jump] << dec << endl;
         badcount++;
       }
     } else {
       if (data2[i] == data1[i+block_jump]) { // -1 because we added 1 before, which is not needed in this case.
         goodcount++;
       } else { 
-        cerr << "FAIL: shifting @" << shift_width << " (n*64), block " << i << " to " << i + block_jump <<  endl;
-        cerr << hex << setw(16) << data2[i] << " <--> " << data1[i+block_jump] << dec << endl;
+        cout << "FAIL: shifting @" << shift_width << " (n*64), block " << i << " to " << i + block_jump <<  endl;
+        cout << hex << setw(16) << data2[i] << " <--> " << data1[i+block_jump] << dec << endl;
         badcount++;
       }
     }
@@ -195,7 +170,7 @@ void test_adds() {
       goodcount++;
     } else {
       badcount++;
-      cerr << "FAIL: a != result @testidx " << idx << endl;
+      cout << "FAIL: a != result @testidx " << idx << endl;
     }
   }
 

@@ -5,52 +5,6 @@
 #include <iostream>
 #include <iomanip>
 
-/**
- * Class that implements addition and multiplication in a horribly slow way, but it supports
- * numbers up to 2**(2**64) ;)
- *
- * (This is an artifact of the first steps in development, when i didn't yet have multiplication
- *  and addition in BigInt itself. Removal of this class is TODO )
- */
-struct BitMath {
-  std::set<uint64_t> bitPositions;
-
-  BitMath() { }
-  BitMath(uint64_t fromInt) {
-    for (size_t p = 0; p < sizeof(uint64_t); ++p) {
-      if (fromInt & (1ULL << p)) {
-        bitPositions.insert(p);
-      }
-    }
-  }
-  BitMath(const BitMath &other) {
-    bitPositions = other.bitPositions;
-  }
-
-  void operator += (const struct BitMath &other) {
-    for (auto it = other.bitPositions.begin(); it != other.bitPositions.end(); ++it) {
-      uint64_t pos = *it;
-      while (bitPositions.count(pos)) {
-        bitPositions.erase(pos++);
-      }
-      bitPositions.insert(pos);
-    }
-  };
-
-  void operator *= (const struct BitMath &other) {
-    std::set<uint64_t> newBitPositions;
-    for (auto it = other.bitPositions.begin(); it != other.bitPositions.end(); ++it) {
-      for (auto jt = bitPositions.begin(); jt != bitPositions.end(); ++jt) {
-        uint64_t pos = *it + *jt;
-        while (newBitPositions.count(pos)) {
-          newBitPositions.erase(pos++);
-        }
-        newBitPositions.insert(pos);
-      } 
-    }
-    bitPositions = newBitPositions;
-  }
-};
 
 /**
  * A toy big integer implementation.
@@ -58,15 +12,15 @@ struct BitMath {
  * Negative numbers are not fully supported yet.
  */
 class BigInt {
-  
+
   public:
   typedef uint64_t internal_type;
   const uint8_t internal_bitlen = sizeof(internal_type)*8;
   // no bits set
-  static const internal_type internal_0 = (internal_type)0;
+  const internal_type internal_0 = (internal_type)0;
   // all bits set
-  static const internal_type internal_max = ~((internal_type)0);
-  
+  const internal_type internal_max = ~((internal_type)0);
+
   private:
   /**
    * The data blocks, bit/byte significance increases with vector index ("little endian"-ish).
@@ -84,12 +38,12 @@ class BigInt {
   }
 
 
-  BigInt(const std::string input, uint8_t radix=10) { 
+  BigInt(const std::string input, uint8_t radix=10) {
     // BitMath objects are used to calculate the positions where the bits for each digit are
     // placed. current_multiplier is multiplied by radix in each iteration with the radix.
     neg = false;
-    BitMath radix_b(radix);
-    BitMath current_multiplier(1ULL);
+    BigInt radix_b(radix);
+    BigInt current_multiplier(1ULL);
 
     for (ssize_t r_pos = input.size() - 1; r_pos >= 0; --r_pos) {
       uint8_t cval_i = 0;
@@ -108,33 +62,10 @@ class BigInt {
           cval_i = 10+(current_char-'a');
         }
       }
-      BitMath cval(cval_i);
+      BigInt cval(cval_i);
       cval *= current_multiplier;
+      add_abs(cval);
 
-      // for each digit, calculate radix*digit_value and add it to the data vector.
-      // TODO make this code use BigInt instead of BitMath.
-      for (auto it = cval.bitPositions.begin(); it != cval.bitPositions.end(); ++it) {
-        const uint64_t bits_per_dtype = sizeof(internal_type)*8;
-        uint64_t datavec_index = (*it)/bits_per_dtype;
-        uint64_t invec_index = (*it)%bits_per_dtype;
-
-        while (true) {
-          if (datavec_index >= m_data.size()) {
-            m_data.resize(datavec_index+1, 0);
-          }
-          if (!(m_data[datavec_index] & (1ULL << invec_index))) {
-            m_data[datavec_index] |= (1ULL << invec_index);
-            break;
-          }
-          m_data[datavec_index] ^= (1ULL << invec_index);
-          // bubble up!
-          invec_index++;
-          if (invec_index/bits_per_dtype == 1) {
-            invec_index = 0;
-            datavec_index++;
-          } 
-        }
-      }
       current_multiplier *= radix_b;
     }
   }
@@ -467,7 +398,7 @@ class BigInt {
   /**
    * add the data from value at the position 'position'.
    */
-  void add_bits_at_pos(uint64_t position, internal_type value) {
+  void add_bits_at_pos(const uint64_t& position, const internal_type& value) {
     if (value == 0)
       return;
     internal_type carry = 0;
@@ -475,51 +406,45 @@ class BigInt {
     // if value is not a multiple of the internal_bitlen, split the
     // value into two words aligned to the bitlen, add the remaining bits (max: bitlen-1)
     // to the carry.
-    
-    uint64_t start_shift = position % internal_bitlen; 
+    uint64_t start_shift = position % internal_bitlen;
     uint64_t data_idx = position / internal_bitlen;
 
+    // There are two "add" variables for the loop below: One to add
+    // to the current block, one to add to the next one.
+    // "next" carries the shifted value in the first iteration and the
+    // carry in the next ones.
+    internal_type current = value;
+    internal_type next = carry;
     if (start_shift) {
-      carry = (value >> (internal_bitlen - start_shift));
-      value <<= start_shift;  
+      next = (value >> (internal_bitlen - start_shift));
+      current = (value << start_shift);
     }
 
-
+    // the maximum value of next here is 0x7f..., so it will always "survive" a += 1.
     do {
-      uint64_t carry_out = 0;
       if (data_idx >= m_data.size()) {
         m_data.resize(data_idx+1);
       }
 
-      // first iteration only:
-      if (value) {
-        if (m_data[data_idx] > (internal_max-value)) {
-          // we can safely add 1 to carry here, since the maximum value of
-          // carry (through the alignment-shift) is 0x7f... (MSB is definitely 0)
-          carry += 1;
-        } 
-        m_data[data_idx] += value;
-        value = 0;
-      } else {
-        // following iterations, value is zero and carry is something up to 0x80
-        if (m_data[data_idx] > (internal_max-carry)) { 
-          carry_out = 1;
-        } else {
-          carry_out = 0;
+      if (current) {
+        // overflow check
+        if (m_data[data_idx] > (internal_max - current)) {
+          next += 1;
         }
-        m_data[data_idx] += carry;
-        carry = carry_out;
+        m_data[data_idx] += current;
       }
 
-      data_idx++; 
-    } while (carry);
+      current = next;
+      next = 0;
+      data_idx++;
+    } while (current);
   }
 
   BigInt operator * (const BigInt &other) const {
     // multiplication of two binary digits will require at most 2*bit_len bits in the result.
     // maybe there is a assembly function where one can explicitly reference the overflowing
     // bits, but for now, take only half the input field, multiply it and add the resulting 2*bit_len
-    // to the sum of the source positions. 
+    // to the sum of the source positions.
     
     BigInt target(0);
     // this code should even support 7-bit architectures ;)
@@ -541,6 +466,12 @@ class BigInt {
     }
 
     return target;
+  }
+
+  void operator *= (const BigInt &other) {
+    BigInt tmp(*this * other);
+    m_data = tmp.m_data;
+    neg = tmp.neg;
   }
 
   /**
