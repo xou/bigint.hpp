@@ -49,7 +49,7 @@ void test_encoding() {
   for (auto it = uint64_repr_test.begin(); it != uint64_repr_test.end(); ++it) {
     BigInt bi(it->second.first, it->first);
 
-    vector<uint64_t> data = bi.dump();
+    vector<uint64_t> data = bi.get_internal_representation();
     if (data != it->second.second) {
       cout << "Fail encoding " << it->second.first << " (base " << (int)it->first << "):" << endl;
       for (auto i = data.begin(); i != data.end(); ++i) {
@@ -85,9 +85,9 @@ std::vector<std::vector<std::string>> long_inputs_add = {
    "111111111011111111101111111110111111111011111111101111111110111111111011111111101111111110111111111011111111101111111110111111111011111111101111111110111111111011111111101111111110111111111011111111100"},
 };
 void test_shifts_inner(BigInt &bi, const int shift_width, uint64_t &goodcount, uint64_t &badcount) {
-  auto data1 = bi.dump();
+  auto data1 = bi.get_internal_representation();
   bi >>= shift_width;
-  auto data2 = bi.dump();
+  auto data2 = bi.get_internal_representation();
   // verify that for each block in the shifted block, the upper n bytes are equivalent to the lower n bytes in the next block in data1.
   // exception is for shifts that are multiples of 64: here we need to compare blocks directly, as we can't shl/shr on multiples of the bit size.
   uint64_t block_jump = shift_width/64;
@@ -340,10 +340,91 @@ bool test_div() {
     } else {
       goodcount++;
     }
-    
   }
   cout << "div test: " << (goodcount + badcount) << " total, " << badcount << " failed." << endl;
   return false;
+}
+
+std::vector<std::pair<uint8_t, std::vector<std::string>>> inputs_strep = {
+  // TODO: Once the performance problems with toString are at least halfway fixed, add more.
+  {16, {
+        "acb05d8db02af6e1eae37075c2dd2b37fd80cf44ccc0dc0895ef4af165d282c1c0cf5a8aba5dbe0e"
+          "713f6911a3a99aa936ae957dd093a91562e6834bb78874e80a91e36b4a48a977fc6335ca98bfb74e"
+          "805dfc4b2e69cba867d253e3f8c71626d6514ec559f2784bff13598d9089997e343d8dda720d886a"
+          "de1350319248db321f985f91283236f6e47273ce6d216911e5ac2ae7785d3cd73e659c4db5b5c821"
+          "724fecbd68377df517dfef6acab302c0862f503d11e91c768ab6486a1d85566e00af4c4b24a78b44"
+          "0181617d11f6cde80b269071ea2245f45a6596eb5d8ae1a9737e21d488eaef7e85978a2fd47700f1"
+          "df50b2913ab1d4ea9d3c7f6816895ac1",
+        "b3350f7b30a592c55a475edd73375401a812008a905541ff06f8609a97cc65ff90ba6a8601de5100"
+          "bfdce5a552d6e0950bdd5fbf40c923f40c1a970fa12643ab2659d069392f4d1412c6bd447606fd1d"
+          "4edc394d94657c7eb1b0362483b1458d2f94ec2da8589f5c9a095c89d29462e872f8e6e39d2e014a"
+          "75d1078af15c6b3586eb733f3b7c802d2d2510794c74bce98de6fc8767efbe3684980db670ab7a96"
+          "e8cbe03b6536254569b9b91362722e999fbf462d91c4e923c30a6fd534738290019caf011b3f4f64"
+          "9a351872517442b30fb0175c414e76a9eb33ccc0d8906bd73c4539fa932ffe2a89f3a1eec6ec752a"
+          "4cf9c63163cf9cb5c1a1179fab4abd86",
+        "65166515d171aa0d3028ddfbe2ad6bdab0f851fd32ac7526c368faf907f698106cce34599a23d8c6"
+          "6c1d47fe94f58d8ec4ca9cf2a5b20ffc37ad4e8750bc79f09b139275c09aa0fc480d18368d365dd2"
+          "992c36ba76a550d30935ccf16e4161c092028b0d586448418c202ab10d7a4fd45fe979e6f74af8f1"
+          "8d0bed8e8b38033a17e6c5accda096169cb74c51053e598f3b4ae625f3b25624c8a854aeff2aceb6"
+          "d4009e9a1a19e9ba737d0d9d19e95b42bab2d836c3fc3af8d71a1d4b30ae076dc067726771b108fe"
+          "0079b4f9ed2bd9160563f324f62a90cc61e77fed62ca661d4960adefc176147a832579a0f79d1280"
+          "95052669efc58cc9977e8115f632b4c5",}},
+  {10, {
+        "37565629951978179190059236410953116631001275027185126993085884630037806271848018"
+          "59343740729896907090462424980930476411081733761715399585919144344819216971341652"
+          "39160761355324490150190223422143810801312795552928341962715821497344666437817752"
+          "91645668997904662064763610501435195130352621161315837969629572334530448130008013"
+          "66969198372547489292103055902515084998151705361978567536257571337991207725519143"
+          "98874890548386530405238443161703662166482189862762753505776791175603768102379650"
+          "88844300809308495319424307896958716699639996271958883417572372163090471341265602"
+          "49348288037337054659833494777947375610985456750079732804",
+        "30679170681932006964165424698475399671231663824138854038632704864592318211691174"
+          "96823866125893148202431098045994490260985298473751561451918181690704625343131516"
+          "86043538675675692237044329626803166600712068163554113124275246526887454327679576"
+          "66485053026146778894706005294220724873056097179372087056750576806752387475701072"
+          "24244246962765311936602753650637629137130245835362833205232250425217858037505415"
+          "78154829711199523266082460175268022549447513920767396331730524893736461579825820"
+          "21675996764464480768754610024478994403530942052025131842733785829917722307859971"
+          "561260675116308203364873121945238732145964182170240873724",
+        "31953127854081778815734670198340202239204790530493068477373472141846638034993509"
+          "19441109564846542147235224750849418856462714364162689132660105247221299543591267"
+          "03723679378071812538480373283035307497336574963614574250780626803410149673726674"
+          "45632299417596196737533776672340888814247010367889196711784980821546888006092157"
+          "95252218639753818052146124711864961142185816087298476593415965332955339884836818"
+          "72864436101998496931891684912304821923556498921971249409662460249261651751010841"
+          "45482855074221185075085456679049473789792994166237740916551487643958427284349959"
+          "223618806700980570923998274536936855905131526750530530249"}},
+  {36, {
+          "1m527midp4ye9kn3mshp20rmwdhkukb1tf8gi0u8km2y2f772fc0fc68oi6yxtk6yzuk0rh5gmtcwdo8"
+          "cvc7nzh05aoogp2mf1qtvdro1eznezcfvokek352dpedz38ou8oc4db00f4ca61r20tvewdzdjnqs5hb"
+          "qy4cjaqqds63hgo8awhswwkbmmyak22zezbxw145hv5q1wo6os7m381ojjbxhfkpuu3qk2980kza423z"
+          "jp8tejbfpsimhfphn9v2d2bffuzdiwk79ude1zyxnxmqi48w9k7kujld5x1lielm2ddgqt9y6ylhipmd"
+          "izm73pfzmjcfbnaj2gp0l0o3chjurekyh5ot7ez16lf95afhf2xx51bwpbvb9jj08spt22vtxx3ju",
+        "icrcvswhmbrka717e70kp1hfl8aux0plmn39d6z6uo0deg65rz5oh7oqk52nsqbow72jhyd9jhlr9p7l"
+          "ddsa7z4o2v4fdzcxm159tvoglliyqd86dbg2rde04sdkrk9ts6nadppp3axuklp4lkoqyu356fwlwot9"
+          "ixnjd0gqlnp0xozkhdj63mrfsxxkukhbet04va7wmrkkt2mkepw3ssg37oxnz5gu6m72118b2v7yzktk"
+          "qty38bveg0jhd6hul4noulljpbr03th5s0zmtye379136hux4tc1t522uzbxya4xv36snwznlzh76znz"
+          "l40j1klsr8nj9mtog2dqz973c68nafokpzz109uhfedtgxllsjb7zf1heyo1came4citg5779vdt"}}
+};
+void test_strrep() {
+  // using add-tests for now, because there are some really large numbers in there ;)
+  // TODO: test hex, oct, any other representation.
+  uint64_t goodcount = 0, badcount = 0;
+  for (auto it = inputs_strep.begin(); it != inputs_strep.end(); ++it) {
+    for (auto it_inner = it->second.begin(); it_inner != it->second.end(); ++it_inner) {
+      BigInt bi(*it_inner, it->first);
+      string result = bi.toString(it->first, false);
+      if (result != *it_inner) {
+        cout << "error: from/to string conversion." << endl << "expected: " << *it_inner << endl
+          << "actual  : " << result << endl;
+        badcount++;
+      } else {
+        goodcount++;
+      }
+    }
+  }
+  cout << "toString test: " << (goodcount + badcount) << " total, " << badcount << " failed." << endl;
+  return;
 }
 
 int main() {
@@ -352,8 +433,8 @@ int main() {
   test_adds();
   test_add_bits_at_pos();
   test_mul();
-  test_sub(); 
+  test_sub();
   test_div();
+  test_strrep();
 }
-
 

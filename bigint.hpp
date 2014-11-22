@@ -4,6 +4,7 @@
 #include <set>
 #include <iostream>
 #include <iomanip>
+#include <cassert>
 
 
 /**
@@ -15,21 +16,51 @@ class BigInt {
 
   public:
   typedef uint64_t internal_type;
-  const uint8_t internal_bitlen = sizeof(internal_type)*8;
+  static const uint8_t internal_bitlen = sizeof(internal_type)*8;
   // no bits set
-  const internal_type internal_0 = (internal_type)0;
+  static const internal_type internal_0 = (internal_type)0;
   // all bits set
-  const internal_type internal_max = ~((internal_type)0);
+  static const internal_type internal_max = ~((internal_type)0);
 
   private:
   /**
+   * Internal data member. This must always be an unsigned type, and needs to have at least 2
+   * bit width ;)
+   *
    * The data blocks, bit/byte significance increases with vector index ("little endian"-ish).
    * The most significant block must never be 0.
    */
-  std::vector<uint64_t> m_data;
+  std::vector<internal_type> m_data;
+  /**
+   * negative flag. Support is not fully here yet.
+   */
   bool neg = false;
 
   public:
+  /**
+   * default copy constructor.
+   */
+  BigInt(const BigInt &) = default;
+  BigInt& operator=(const BigInt & other) = default;
+
+  /**
+   * Initializes a BigInt with zero.
+   */
+  BigInt() : neg(false) {}
+
+  /**
+   * Initialize from another BigInt instance, but override the "negative" flag
+   * with the value given in the second parameter.
+   */
+  BigInt(const BigInt &other, bool neg_override) {
+    m_data = other.m_data;
+    neg = neg_override;
+  }
+
+  /**
+   * Initialize from a standard integer type. Note that the value
+   * will be treated as unsigned.
+   */
   BigInt(const uint64_t i, bool negative=false) {
     if (i == 0)
       return;
@@ -38,6 +69,12 @@ class BigInt {
   }
 
 
+  /**
+   * Initialize from a string. The string is not checked for correctness. String parsing
+   * is done RTL and stops at the first '-' or at the beginning of the string.
+   *
+   * Radix can be anything between 2-36. Supported characters are [0-9a-zA-Z].
+   */
   BigInt(const std::string input, uint8_t radix=10) {
     // BitMath objects are used to calculate the positions where the bits for each digit are
     // placed. current_multiplier is multiplied by radix in each iteration with the radix.
@@ -56,7 +93,7 @@ class BigInt {
       if (radix <= 10 || (current_char >= '0' && current_char <= '9')) {
         cval_i = current_char - '0';
       } else {
-        if (current_char >= 'A' && current_char <= 'F') {
+        if (current_char >= 'A' && current_char <= 'Z') {
           cval_i = 10+(current_char-'A');
         } else {
           cval_i = 10+(current_char-'a');
@@ -70,9 +107,6 @@ class BigInt {
     }
   }
 
-  std::vector<uint64_t> dump() {
-    return m_data;
-  }
 
   /**
    * returns the position of the highest bit set, or zero if no bit is set.
@@ -81,16 +115,16 @@ class BigInt {
   uint64_t get_highest_set_bit_position() const {
     if (!m_data.size())
       return 0;
-    
+
     uint64_t pos = m_data.size()-1;
-    internal_type highest = m_data[pos]; 
+    internal_type highest = m_data[pos];
     pos = pos * internal_bitlen + 1;
 
     // there is a nice way of doing binary search here:
     // if (highest & 0xffff0000) pos += 32;
     // if (highest & 0x00ff00ff) pos += 16; etc.
     // but it depends on the intenal_type_size, and needs to be generalized with templates or something.
-    
+
     while (highest >>= 1)
       pos++;
     return pos;
@@ -255,39 +289,19 @@ class BigInt {
    * Add the absolute value of other to this object's absolute value.
    */
   void add_abs( const BigInt &other) {
-    // TODO this *should* work with the object itself, but this must be verified!
-    uint16_t carry_in = 0;
-    uint16_t carry_out = 0;
-    uint64_t idx = 0;
-    for (; idx < other.m_data.size() || idx < m_data.size() || carry_out; ++idx) {
-      carry_in = carry_out;
-      internal_type other_data = internal_0;
-      if (idx < other.m_data.size()) {
-        other_data = other.m_data[idx];
-      }
-
-      uint64_t local_data = internal_0;
-      if (m_data.size() <= idx) {
-        m_data.resize(m_data.size()+1);
-      } else {
-        local_data = m_data[idx];
-      }
-
-      // set carry out if addition of both values will cause overflow (1.)
-      carry_out = (other_data > (internal_max - local_data));
-
-      local_data += other_data;
-      
-      // also, set carry if the carry in causes overflow (2.; both cases cannot occur at the same time.)
-      if (local_data == internal_max && carry_in) {
-        carry_out = 1;
-      }
-      m_data[idx] = carry_in + local_data;
+    // iterate backwards so that this method can be used to add the object
+    // to itself.
+    for (ssize_t idx = other.m_data.size()-1; idx >= 0; --idx) {
+      add_bits_at_pos(idx*internal_bitlen, other.m_data[idx]);
     }
   }
 
+  /**
+   * remove empty m_data blocks at the end.
+   * this should be called by every function that could cause empty registers.
+   */
   void remove_empty_registers() {
-    int64_t i = m_data.size()-1;
+    ssize_t i = m_data.size()-1;
     for (; i >= 0; --i) {
       if (m_data[i])
         break;
@@ -295,6 +309,8 @@ class BigInt {
     m_data.erase(m_data.begin()+i+1, m_data.end());
     if (!m_data.size())
       neg = false;
+    else
+      assert(m_data[m_data.size()-1] != 0);
   }
 
   /**
@@ -445,7 +461,7 @@ class BigInt {
     // maybe there is a assembly function where one can explicitly reference the overflowing
     // bits, but for now, take only half the input field, multiply it and add the resulting 2*bit_len
     // to the sum of the source positions.
-    
+
     BigInt target(0);
     // this code should even support 7-bit architectures ;)
     const uint8_t blocksz = internal_bitlen/2;
@@ -475,12 +491,14 @@ class BigInt {
   }
 
   /**
-   * Division, obviously. Dividing by zero is equivalent to dividing by 1
+   * divide the current object by the denominator parameter and
+   * return the result.
    */
-  BigInt operator / (const BigInt &denominator) const {
+  BigInt div_abs(const BigInt &denominator, BigInt &modulo) const {
     if (denominator.lt_abs(2)) {
       return BigInt(*this);
     }
+
     // Result
     BigInt quotient(0);
     // work variable from which fitting denominator_cp values will be substracted in each
@@ -511,7 +529,68 @@ class BigInt {
         quotient += factor;
       }
     }
+    modulo = numerator;
     return quotient;
+  }
+
+  BigInt div_abs(const BigInt& denominator) const {
+    BigInt unused_modulo_result(0);
+    return div_abs(denominator, unused_modulo_result);
+  }
+
+  /**
+   * Division, obviously. Dividing by zero is equivalent to dividing by 1
+   */
+  BigInt operator / (const BigInt &denominator) const {
+    return BigInt(div_abs(denominator), neg ^ denominator.neg);
+  }
+
+  /**
+   * Modulo operation. The sign is taken from the dividend (same as the C++ ISO-2011 standard)
+   */
+  BigInt operator % (const BigInt &denominator) const {
+    BigInt modulo_result(0);
+    div_abs(denominator, modulo_result);
+    modulo_result.neg = neg;
+    return modulo_result;
+  }
+
+  /**
+   * returns the string representation.
+   * @param radix base to use
+   * @param uppercase whether to use uppercase letters (for radix > 10)
+   */
+  std::string toString(uint8_t radix=10, bool uppercase=false) const {
+    std::string ret;
+    BigInt copy(*this);
+
+    bool result_neg = copy.is_neg();
+
+    while (!copy.is_zero()) {
+      BigInt mod;
+      copy = copy.div_abs(radix, mod);
+      // figure out which character to use.
+      if (mod.m_data.size() == 1) {
+        // figure out which character to append.
+        if (mod.m_data[0] < 10) {
+          ret.push_back('0'+mod.m_data[0]);
+        } else {
+          if (uppercase) {
+            ret.push_back('A' + mod.m_data[0]-10);
+          } else {
+            ret.push_back('a' + mod.m_data[0]-10);
+          }
+        }
+      } else {
+        ret.push_back('0');
+      }
+    }
+
+    if (result_neg) {
+      ret.push_back('-');
+    }
+    std::string reversed(ret.rbegin(), ret.rend());
+    return reversed;
   }
 
   void dump_registers(std::string prefix = "", int fill = 4) const {
@@ -524,6 +603,21 @@ class BigInt {
       std::cout <<  "  0x" << std::setw(sizeof(internal_type)*2) << std::setfill('0') << std::hex << m_data[i] << std::dec;
     }
     std::cout << std::endl;
+  }
+
+  /**
+   * returns the internal representation of the data, without the neg flag.
+   */
+  std::vector<internal_type> get_internal_representation() {
+    return m_data;
+  }
+
+  bool is_neg() {
+    return neg;
+  }
+
+  bool is_zero() {
+    return m_data.size() == 0;
   }
 
 };
