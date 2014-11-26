@@ -49,8 +49,8 @@ void test_encoding() {
   for (auto it = uint64_repr_test.begin(); it != uint64_repr_test.end(); ++it) {
     BigInt bi(it->second.first, it->first);
 
-    vector<uint64_t> data = bi.get_internal_representation();
-    if (data != it->second.second) {
+    BigInt::data_collection_type data = bi.get_internal_representation();
+    if (data != BigInt::data_collection_type(it->second.second.begin(), it->second.second.end())) {
       cout << "Fail encoding " << it->second.first << " (base " << (int)it->first << "):" << endl;
       for (auto i = data.begin(); i != data.end(); ++i) {
         cout << "  " << *i << endl;
@@ -295,7 +295,7 @@ bool test_sub() {
 
   }
 
-  cout << "substraction test: " << (goodcount + badcount) << " total, " << badcount << " failed." << endl;
+  cout << "subtraction test: " << (goodcount + badcount) << " total, " << badcount << " failed." << endl;
   return false;
 }
 

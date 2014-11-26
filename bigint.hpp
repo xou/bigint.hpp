@@ -6,11 +6,11 @@
 #include <iomanip>
 #include <cassert>
 
-
 /**
  * A toy big integer implementation.
  *
  * Negative numbers are not fully supported yet.
+ *
  */
 class BigInt {
 
@@ -22,6 +22,12 @@ class BigInt {
   // all bits set
   static const internal_type internal_max = ~((internal_type)0);
 
+  /**
+   * it is possible to use a different datatype as well, such as deque, to address
+   * performance problems when using shifts a lot. However, this slows down other
+   * operations.
+   */
+  typedef std::vector<internal_type> data_collection_type;
   private:
   /**
    * Internal data member. This must always be an unsigned type, and needs to have at least 2
@@ -30,7 +36,7 @@ class BigInt {
    * The data blocks, bit/byte significance increases with vector index ("little endian"-ish).
    * The most significant block must never be 0.
    */
-  std::vector<internal_type> m_data;
+  data_collection_type m_data;
   /**
    * negative flag. Support is not fully here yet.
    */
@@ -184,6 +190,7 @@ class BigInt {
     // add empty elements to the front of the vector if s is larger than the internal bitlength
     if (s >= internal_bitlen) {
       // instantiate a new internal_type(internal_0) because insert wants a const reference
+      // TODO this is one of the main performance bottlenecks for div_abs atm
       m_data.insert(m_data.begin(), s/internal_bitlen, internal_type(internal_0));
       s %= internal_bitlen;
       if (s == 0)
@@ -314,7 +321,7 @@ class BigInt {
   }
 
   /**
-   * substract the absolute value of other from the absolute value of this object.
+   * subtract the absolute value of other from the absolute value of this object.
    * |other| must be lower than or equal to |this|.
    */
   void sub_abs( const BigInt &other) {
@@ -359,7 +366,7 @@ class BigInt {
 
   void operator -= (const BigInt &other) {
     // Make sure that the other number is smaller than this. If not,
-    // substract the other way round and set the negative flag on the result.
+    // subtract the other way round and set the negative flag on the result.
     if (lt_abs(other)) {
       BigInt tmp(other);
       tmp -= *this;
@@ -413,6 +420,7 @@ class BigInt {
 
   /**
    * add the data from value at the position 'position'.
+   * position is zero-indexed.
    */
   void add_bits_at_pos(const uint64_t& position, const internal_type& value) {
     if (value == 0)
@@ -493,6 +501,9 @@ class BigInt {
   /**
    * divide the current object by the denominator parameter and
    * return the result.
+   *
+   * TODO: This code depends quite a lot on shifts, which are quite
+   *       slow unfortunately (mainly the memory allocator calls).
    */
   BigInt div_abs(const BigInt &denominator, BigInt &modulo) const {
     if (denominator.lt_abs(2)) {
@@ -501,32 +512,30 @@ class BigInt {
 
     // Result
     BigInt quotient(0);
-    // work variable from which fitting denominator_cp values will be substracted in each
-    // iteration.
+    // work variable from which fitting denominator_cp values will be subtracted in each
+    // iteration (-> modulo)
     BigInt numerator(*this);
 
     uint64_t denominator_msb = denominator.get_highest_set_bit_position();
+
+
     while (denominator.le_abs(numerator)) {
       uint64_t numerator_msb = numerator.get_highest_set_bit_position();
       uint64_t shiftfactor = numerator_msb - denominator_msb;
 
-      BigInt factor(1);
-
-      // Work variable which will be shifted around to see whether it "fits" into numerator.
+      // work variable which can be shifted around. First, it is MSB-aligned with the numerator,
+      // then it is checked whether it "fits". If not (that is, the less significant bits make the
+      // numerator "higher" than the (shifted) denominator), shift one to the right and subtract -
+      // this will always fit.
       BigInt denominator_cp(denominator);
-
-      // Align the two MSBs. We can either substract directly with this result
-      // or with the denominator shifted to the right by one.
-      factor <<= shiftfactor;
       denominator_cp <<= shiftfactor;
       if (denominator_cp.le_abs(numerator)) {
         numerator.sub_abs(denominator_cp);
-        quotient += factor;
+        quotient.add_bits_at_pos(shiftfactor, 1);
       } else {
-        factor >>= 1;
         denominator_cp >>= 1;
         numerator.sub_abs(denominator_cp);
-        quotient += factor;
+        quotient.add_bits_at_pos(shiftfactor-1, 1);
       }
     }
     modulo = numerator;
@@ -608,7 +617,7 @@ class BigInt {
   /**
    * returns the internal representation of the data, without the neg flag.
    */
-  std::vector<internal_type> get_internal_representation() {
+  data_collection_type get_internal_representation() {
     return m_data;
   }
 
